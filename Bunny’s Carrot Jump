@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ✅ الاسم الأول كما طلبت بالضبط: Bunny’s Carrot Jump -->
+    <title>Bunny's Carrot Jump</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        sky: '#87CEEB',
+                        cloud: '#FFFFFF',
+                        golden: '#FFD700',
+                    },
+                    fontFamily: {
+                        game: ['Poppins', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .game-shadow {
+                filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+            }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body class="bg-sky font-game overflow-hidden select-none">
+    <div id="gameContainer" class="relative w-screen h-screen max-w-md mx-auto border-4 border-white rounded-2xl shadow-2xl">
+        <!-- Score Board -->
+        <div class="absolute top-4 left-0 right-0 flex justify-between px-6 z-10">
+            <div class="bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 font-bold text-blue-800 game-shadow">
+                <i class="fa fa-line-chart mr-2"></i> Height: <span id="heightValue">0</span> m
+            </div>
+            <div class="bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 font-bold text-orange-600 game-shadow">
+                <i class="fa fa-carrot mr-1"></i> Goal: 1000m
+            </div>
+        </div>
+
+        <!-- Game Area -->
+        <canvas id="gameCanvas" class="w-full h-full"></canvas>
+
+        <!-- Win Screen -->
+        <div id="winScreen" class="hidden absolute inset-0 bg-blue-900/80 backdrop-blur-md flex flex-col items-center justify-center z-50 rounded-xl">
+            <h1 class="text-golden text-4xl md:text-5xl font-extrabold mb-4 animate-bounce">🎉 CONGRATULATIONS! 🎉</h1>
+            <p class="text-white text-2xl font-semibold mb-2">YOU REACHED THE TOP!</p>
+            <p class="text-white text-2xl font-semibold mb-6">YOU GOT THE GOLDEN CARROT!</p>
+            
+            <!-- Golden Carrot -->
+            <div class="text-8xl mb-4 animate-pulse">🥕</div>
+            
+            <p class="text-golden text-xl font-bold mb-8">GOAL COMPLETE! GAME OVER</p>
+            
+            <button onclick="restartGame()" class="bg-golden hover:bg-yellow-500 text-blue-900 font-bold py-3 px-8 rounded-full transition-all transform hover:scale-105 shadow-lg">
+                PLAY AGAIN
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // === GAME SETTINGS ===
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const winScreen = document.getElementById('winScreen');
+        const heightValue = document.getElementById('heightValue');
+
+        canvas.width = 400;
+        canvas.height = 600;
+
+        let gameRunning = true;
+        let height = 0;
+        const GOAL_HEIGHT = 1000; // النهاية المطلوبة
+
+        // ✅ الأصوات: قفز + خسارة + فوز (بدون موسيقى)
+        const jumpSound = new Audio('https://actions.google.com/sounds/v1/sports/whistle_blow_high_pitch.ogg');
+        jumpSound.volume = 0.25; // صوت خفيف للقفز
+        const loseSound = new Audio('https://actions.google.com/sounds/v1/impacts/impact_plastic_hard.ogg');
+        loseSound.volume = 0.4; // صوت لما يطيح
+        const winSound = new Audio('https://actions.google.com/sounds/v1/alarms/piano_chord_up.ogg');
+        winSound.volume = 0.6; // صوت تهنئة لما يفوز
+
+        // Bunny Character
+        const bunny = {
+            x: 180,
+            y: 500,
+            width: 40,
+            height: 50,
+            dx: 0,
+            dy: 0,
+            speed: 5,
+            jumpPower: 12,
+            gravity: 0.5,
+            onGround: false
+        };
+
+        // Clouds Platforms
+        let clouds = [];
+        function initClouds() {
+            clouds = [];
+            for(let i=0; i<15; i++) {
+                clouds.push({
+                    x: Math.random() * 350,
+                    y: i * 40,
+                    width: 70,
+                    height: 25
+                });
+            }
+        }
+
+        // Controls
+        let keys = {};
+        document.addEventListener('keydown', e => keys[e.code] = true);
+        document.addEventListener('keyup', e => keys[e.code] = false);
+        
+        // Touch Controls
+        let touchX = null;
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            touchX = e.touches[0].clientX - rect.left;
+        });
+        canvas.addEventListener('touchend', () => touchX = null);
+
+        // Update Game
+        function update() {
+            if(!gameRunning) return;
+
+            // Movement
+            if(keys['ArrowLeft'] || (touchX && touchX < canvas.width/2)) bunny.dx = -bunny.speed;
+            else if(keys['ArrowRight'] || (touchX && touchX > canvas.width/2)) bunny.dx = bunny.speed;
+            else bunny.dx *= 0.9;
+
+            // Gravity
+            bunny.dy += bunny.gravity;
+            bunny.onGround = false;
+
+            // Move Bunny
+            bunny.x += bunny.dx;
+            bunny.y += bunny.dy;
+
+            // Screen bounds
+            if(bunny.x < 0) bunny.x = 0;
+            if(bunny.x + bunny.width > canvas.width) bunny.x = canvas.width - bunny.width;
+
+            // === لو طاح الأرنب (خسارة) ===
+            if(bunny.y > canvas.height) {
+                loseSound.currentTime = 0;
+                loseSound.play(); // صوت الخسارة
+                restartGame();
+                return;
+            }
+
+            // التصادم مع الغيوم
+            clouds.forEach(cloud => {
+                if(bunny.dy > 0 && 
+                   bunny.x < cloud.x + cloud.width &&
+                   bunny.x + bunny.width > cloud.x &&
+                   bunny.y + bunny.height > cloud.y &&
+                   bunny.y + bunny.height < cloud.y + cloud.height) {
+                    
+                    bunny.dy = -bunny.jumpPower;
+                    bunny.onGround = true;
+                    
+                    // ✅ صوت القفز كل مرة يقفز فيها
+                    jumpSound.currentTime = 0;
+                    jumpSound.play();
+
+                    // زيادة الارتفاع
+                    height += 10;
+                    heightValue.innerText = height;
+
+                    // ✅ لما يوصل للنهاية ويفوز
+                    if(height >= GOAL_HEIGHT) {
+                        gameRunning = false;
+                        winSound.currentTime = 0;
+                        winSound.play(); // صوت التهنئة
+                        winScreen.classList.remove('hidden');
+                    }
+                }
+            });
+
+            // تحريك الغيوم لاسفل لما يطلع الأرنب لفوق
+            if(bunny.y < 250) {
+                clouds.forEach(cloud => {
+                    cloud.y += 3;
+                });
+                bunny.y = 250;
+
+                // اضافة غيوم جديدة
+                if(clouds[0].y > 0) {
+                    clouds.unshift({
+                        x: Math.random() * 350,
+                        y: -20,
+                        width: 70,
+                        height: 25
+                    });
+                }
+            }
+
+            // حذف الغيوم اللي طلعت برا الشاشة
+            clouds = clouds.filter(cloud => cloud.y < canvas.height);
+        }
+
+        // رسم اللعبة
+        function draw() {
+            // خلفية السماء المتدرجة
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#1E90FF');
+            gradient.addColorStop(1, '#87CEEB');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // رسم الغيوم البيضاء
+            ctx.fillStyle = '#FFFFFF';
+            clouds.forEach(cloud => {
+                ctx.beginPath();
+                ctx.ellipse(cloud.x + 20, cloud.y + 12, 35, 20, 0, 0, Math.PI * 2);
+                ctx.ellipse(cloud.x + 50, cloud.y + 10, 25, 15, 0, 0, Math.PI * 2);
+                ctx.ellipse(cloud.x + 10, cloud.y + 10, 25, 15, 0, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // رسم الأرنب
+            ctx.font = '40px Arial';
+            ctx.fillText('🐰', bunny.x, bunny.y + bunny.height);
+        }
+
+        // دورة اللعبة
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // إعادة تشغيل اللعبة
+        function restartGame() {
+            height = 0;
+            heightValue.innerText = 0;
+            bunny.y = 500;
+            bunny.x = 180;
+            bunny.dy = 0;
+            gameRunning = true;
+            winScreen.classList.add('hidden');
+            initClouds();
+        }
+
+        // بدء اللعبة
+        initClouds();
+        loop();
+    </script>
+</body>
+</html>
